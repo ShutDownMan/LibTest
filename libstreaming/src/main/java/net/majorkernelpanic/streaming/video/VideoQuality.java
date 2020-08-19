@@ -46,7 +46,8 @@ public class VideoQuality {
 	public VideoQuality(int resX, int resY) {
 		this.resX = resX;
 		this.resY = resY;
-	}	
+		this.framerate = 30;
+	}
 
 	/**
 	 * Represents a quality for a video stream.
@@ -62,10 +63,10 @@ public class VideoQuality {
 		this.resY = resY;
 	}
 
-	public int framerate = 0;
-	public int bitrate = 0;
-	public int resX = 0;
-	public int resY = 0;
+	public int framerate = 30;
+	public int bitrate = 5000;
+	public int resX = 1920;
+	public int resY = 1080;
 
 	public boolean equals(VideoQuality quality) {
 		if (quality==null) return false;
@@ -132,7 +133,7 @@ public class VideoQuality {
 		for (Iterator<int[]> it = supportedFpsRanges.iterator(); it.hasNext();) {
 			int[] interval = it.next();
 			// Intervals are returned as integers, for example "29970" means "29.970" FPS.
-			supportedFpsRangesStr += interval[0]/1000+"-"+interval[1]/1000+"fps"+(it.hasNext()?", ":"");
+			supportedFpsRangesStr += interval[0]/1000.0+"-"+interval[1]/1000.0+"fps"+(it.hasNext()?", ":"");
 			if (interval[1]>maxFps[1] || (interval[0]>maxFps[0] && interval[1]==maxFps[1])) {
 				maxFps = interval; 
 			}

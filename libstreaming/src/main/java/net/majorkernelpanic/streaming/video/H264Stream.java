@@ -149,13 +149,13 @@ public class H264Stream extends VideoStream {
 			throw new StorageUnavailableException("No external storage or external storage not ready !");
 		}
 
-		final String TESTFILE = Environment.getExternalStorageDirectory().getPath()+"/spydroid-test.mp4";
+		final String TESTFILE = "/storage/emulated/0/Android/data/com.example.libtest/files/Movies/spydroid-test.mp4";
 		
 		Log.i(TAG,"Testing H264 support... Test file saved at: "+TESTFILE);
 
 		try {
 			File file = new File(TESTFILE);
-			file.createNewFile();
+			boolean a = file.createNewFile();
 		} catch (IOException e) {
 			throw new StorageUnavailableException(e.getMessage());
 		}

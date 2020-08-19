@@ -338,33 +338,38 @@ public abstract class VideoStream extends MediaStream {
 		// The camera must be unlocked before the MediaRecorder can use it
 		unlockCamera();
 
+		mMediaRecorder = new MediaRecorder();
+		mMediaRecorder.setCamera(mCamera);
+		mMediaRecorder.setVideoSource(MediaRecorder.VideoSource.CAMERA);
+		mMediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_2_TS);
+		mMediaRecorder.setVideoEncoder(mVideoEncoder);
+		mMediaRecorder.setPreviewDisplay(mSurfaceView.getHolder().getSurface());
+		mMediaRecorder.setVideoSize(mRequestedQuality.resX, mRequestedQuality.resY);
+		mMediaRecorder.setVideoFrameRate(mRequestedQuality.framerate);
+
+		// The bandwidth actually consumed is often above what was requested
+		mMediaRecorder.setVideoEncodingBitRate((int)(mRequestedQuality.bitrate*0.8));
+
+		// We write the output of the camera in a local socket instead of a file !
+		// This one little trick makes streaming feasible quiet simply: data from the camera
+		// can then be manipulated at the other end of the socket
+		FileDescriptor fd = null;
+		fd = mParcelWrite.getFileDescriptor();
+//		if (sPipeApi == PIPE_API_PFD) {
+//		} else  {
+//			fd = mSender.getFileDescriptor();
+//		}
+		mMediaRecorder.setOutputFile(fd);
+//		mMediaRecorder.setOutputFile("/storage/emulated/0/Android/data/com.example.libtest/files/Movies/spydroid-test.ts");
+
 		try {
-			mMediaRecorder = new MediaRecorder();
-			mMediaRecorder.setCamera(mCamera);
-			mMediaRecorder.setVideoSource(MediaRecorder.VideoSource.CAMERA);
-			mMediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP);
-			mMediaRecorder.setVideoEncoder(mVideoEncoder);
-			mMediaRecorder.setPreviewDisplay(mSurfaceView.getHolder().getSurface());
-			mMediaRecorder.setVideoSize(mRequestedQuality.resX,mRequestedQuality.resY);
-			mMediaRecorder.setVideoFrameRate(mRequestedQuality.framerate);
-
-			// The bandwidth actually consumed is often above what was requested 
-			mMediaRecorder.setVideoEncodingBitRate((int)(mRequestedQuality.bitrate*0.8));
-
-			// We write the output of the camera in a local socket instead of a file !			
-			// This one little trick makes streaming feasible quiet simply: data from the camera
-			// can then be manipulated at the other end of the socket
-			FileDescriptor fd = null;
-			if (sPipeApi == PIPE_API_PFD) {
-				fd = mParcelWrite.getFileDescriptor();
-			} else  {
-				fd = mSender.getFileDescriptor();
-			}
-			mMediaRecorder.setOutputFile(fd);
-
 			mMediaRecorder.prepare();
-			mMediaRecorder.start();
-
+			Thread.sleep(1000);
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		}
+		mMediaRecorder.start();
+		try {
 		} catch (Exception e) {
 			throw new ConfNotSupportedException(e.getMessage());
 		}
@@ -377,27 +382,33 @@ public abstract class VideoStream extends MediaStream {
 			is = mReceiver.getInputStream();
 		}
 
+		ResettableMTSSource source = MTSSources.from(is);
+
 		// This will skip the MPEG4 header if this step fails we can't stream anything :(
-		try {
-			byte buffer[] = new byte[4];
-			// Skip all atoms preceding mdat atom
-			while (!Thread.interrupted()) {
-				while (is.read() != 'm');
-				is.read(buffer,0,3);
-				if (buffer[0] == 'd' && buffer[1] == 'a' && buffer[2] == 't') break;
-			}
-		} catch (IOException e) {
-			Log.e(TAG,"Couldn't skip mp4 header :/");
-			stop();
-			throw e;
-		}
+//		try {
+//			Log.d(TAG, "SEARCHING MDAT!");
+//			byte buffer[] = new byte[4];
+//			// Skip all atoms preceding mdat atom
+//			while (!Thread.interrupted()) {
+//				while (is.read() != 'm');
+////				Log.d(TAG, ".");
+//				is.read(buffer,0,3);
+//				if (buffer[0] == 'd' && buffer[1] == 'a' && buffer[2] == 't') {
+//					Log.d(TAG, "FOUND MDAT!");
+//					break;
+//				}
+//			}
+//		} catch (IOException e) {
+//			Log.e(TAG,"Couldn't skip mp4 header :/");
+//			stop();
+//			throw e;
+//		}
 
 		// The packetizer encapsulates the bit stream in an RTP stream and send it over the network
-		mPacketizer.setInputStream(is);
-		mPacketizer.start();
+//		mPacketizer.setInputStream(is);
+//		mPacketizer.start();
 
 		mStreaming = true;
-
 	}
 
 
@@ -674,9 +685,11 @@ public abstract class VideoStream extends MediaStream {
 		if (mUnlocked) {
 			Log.d(TAG,"Locking camera");
 			try {
+				mCamera.lock();
 				mCamera.reconnect();
+				Thread.sleep(1000);
 			} catch (Exception e) {
-				Log.e(TAG,e.getMessage());
+				Log.e(TAG, e.getMessage());
 			}
 			mUnlocked = false;
 		}

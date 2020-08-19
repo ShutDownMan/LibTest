@@ -5,7 +5,7 @@
     android:versionName="4.0" >
 
     <uses-sdk
-        android:minSdkVersion="14"
-        android:targetSdkVersion="19" />
+        android:minSdkVersion="26"
+        android:targetSdkVersion="26" />
 
 </manifest>

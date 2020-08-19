@@ -406,7 +406,7 @@ public class RtspClient {
 				mOutputStream.flush();
 				Response response = Response.parseResponse(mBufferedReader);
 				Matcher m;
-				
+
 				if (response.headers.containsKey("session")) {
 					try {
 						m = Response.rexegSession.matcher(response.headers.get("session"));

@@ -5,10 +5,10 @@
 5    android:versionName="4.0" >
 6
 7    <uses-sdk
-7-->/home/jarvis/AndroidStudioProjects/libtest/libstreaming/src/main/AndroidManifest.xml:6:5-47
-8        android:minSdkVersion="14"
-8-->/home/jarvis/AndroidStudioProjects/libtest/libstreaming/src/main/AndroidManifest.xml:6:5-47
-9        android:targetSdkVersion="19" />
-9-->/home/jarvis/AndroidStudioProjects/libtest/libstreaming/src/main/AndroidManifest.xml:6:15-44
+7-->/home/jarvis/git_src/libTest/libstreaming/src/main/AndroidManifest.xml:6:5-47
+8        android:minSdkVersion="26"
+8-->/home/jarvis/git_src/libTest/libstreaming/src/main/AndroidManifest.xml:6:5-47
+9        android:targetSdkVersion="26" />
+9-->/home/jarvis/git_src/libTest/libstreaming/src/main/AndroidManifest.xml:6:15-44
 10
 11</manifest>

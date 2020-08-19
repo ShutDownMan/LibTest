@@ -12,6 +12,7 @@ import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
+import android.os.Environment;
 import android.preference.PreferenceManager;
 import android.util.Log;
 import android.view.Menu;
@@ -25,7 +26,10 @@ import net.majorkernelpanic.streaming.audio.AudioQuality;
 import net.majorkernelpanic.streaming.gl.SurfaceView;
 import net.majorkernelpanic.streaming.rtsp.RtspClient;
 import net.majorkernelpanic.streaming.rtsp.RtspServer;
+import net.majorkernelpanic.streaming.video.VideoQuality;
 
+import java.io.File;
+import java.io.IOException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -58,6 +62,19 @@ public class MainActivity extends AppCompatActivity implements RtspClient.Callba
         mSurfaceView.getHolder().addCallback(this);
 
         verifyStoragePermissions(this);
+//
+//        File file = null;
+//        File storageDir = getApplicationContext().getExternalFilesDir(Environment.DIRECTORY_MOVIES);
+//        assert storageDir != null;
+//        Log.d(TAG, storageDir.toString());
+//        try {
+//            file = File.createTempFile("spydroid-test", ".mp4", storageDir);
+//        } catch (IOException e) {
+//            e.printStackTrace();
+//        }
+//
+//        assert file != null;
+//        file.delete();
 
         // Initialize RTSP client
         initRtspClient();
@@ -84,7 +101,8 @@ public class MainActivity extends AppCompatActivity implements RtspClient.Callba
                 .setAudioEncoder(SessionBuilder.AUDIO_NONE)
                 .setAudioQuality(new AudioQuality(8000, 16000))
                 .setVideoEncoder(SessionBuilder.VIDEO_H264)
-                .setSurfaceView(mSurfaceView).setPreviewOrientation(0)
+                .setVideoQuality(new VideoQuality())
+                .setSurfaceView(mSurfaceView).setPreviewOrientation(90)
                 .setCallback(this).build();
 
         // Configures the RTSP client
