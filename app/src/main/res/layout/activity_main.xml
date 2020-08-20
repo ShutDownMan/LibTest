@@ -13,4 +13,10 @@
         android:layout_height="wrap_content"
         android:layout_gravity="center" />
 
+    <ToggleButton
+        android:id="@+id/toggleRecordingButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="ToggleButton" />
+
 </FrameLayout>

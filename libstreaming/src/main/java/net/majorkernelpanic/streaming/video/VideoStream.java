@@ -50,6 +50,7 @@ import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceHolder.Callback;
 
+
 /** 
  * Don't use this class directly.
  */
@@ -381,8 +382,26 @@ public abstract class VideoStream extends MediaStream {
 		} else  {
 			is = mReceiver.getInputStream();
 		}
-
-		ResettableMTSSource source = MTSSources.from(is);
+//
+//		InputStreamMTSSource.InputStreamMTSSourceBuilder isStreamBuilder = InputStreamMTSSource.builder();
+//		InputStreamMTSSource mtsSource = isStreamBuilder.setInputStream(is).build();
+//
+//		// Set up packet sink. We will send packets directly in UDP
+//		MTSSink transport = UDPTransport.builder()
+//				.setAddress("192.168.4.112") // Can be a multicast address
+//				.setPort(8554)
+//				.setSoTimeout(5000)
+//				.setTtl(1)
+//				.build();
+//
+//		// Build streamer
+//		Streamer streamer = Streamer.builder()
+//				.setSource(mtsSource) // We will stream this source
+//				.setSink(transport) // We will send packets to this sink
+//				.build();
+//
+//		// Start streaming
+//		streamer.stream();
 
 		// This will skip the MPEG4 header if this step fails we can't stream anything :(
 //		try {

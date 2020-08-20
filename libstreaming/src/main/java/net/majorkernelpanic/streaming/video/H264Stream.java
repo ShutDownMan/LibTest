@@ -37,6 +37,7 @@ import android.os.Environment;
 import android.service.textservice.SpellCheckerService.Session;
 import android.util.Base64;
 import android.util.Log;
+import android.widget.AutoCompleteTextView;
 
 /**
  * A class for streaming H.264 from the camera of an android device using RTP.
@@ -149,7 +150,14 @@ public class H264Stream extends VideoStream {
 			throw new StorageUnavailableException("No external storage or external storage not ready !");
 		}
 
-		final String TESTFILE = "/storage/emulated/0/Android/data/com.example.libtest/files/Movies/spydroid-test.mp4";
+		final String directoryPath = "/storage/emulated/0/Android/data/com.example.libtest/files/Movies";
+		File dir = new File(directoryPath);
+		if(!dir.exists()) {
+			Log.e(TAG, "DIRECTORY DOESN'T EXIST!");
+			boolean createdDirs = dir.mkdirs();
+			Log.d(TAG, String.valueOf(createdDirs));
+		}
+		final String TESTFILE = directoryPath + "/spydroid-test.ts";
 		
 		Log.i(TAG,"Testing H264 support... Test file saved at: "+TESTFILE);
 
