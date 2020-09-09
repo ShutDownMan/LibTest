@@ -4,40 +4,47 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 
+import com.example.libtest.gl.SurfaceView;
+
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.hardware.Camera;
+import android.media.MediaCodec;
+import android.media.MediaCodecInfo;
+import android.media.MediaFormat;
 import android.media.MediaRecorder;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Looper;
 import android.os.ParcelFileDescriptor;
 import android.util.Log;
+import android.view.Surface;
 import android.view.SurfaceHolder;
-import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.Toast;
 import android.widget.ToggleButton;
 
-import net.majorkernelpanic.streaming.Session;
-import net.majorkernelpanic.streaming.gl.SurfaceView;
-import net.majorkernelpanic.streaming.rtsp.RtspClient;
-
-import org.taktik.mpegts.Streamer;
-import org.taktik.mpegts.sinks.MTSSink;
-import org.taktik.mpegts.sinks.UDPTransport;
-import org.taktik.mpegts.sources.InputStreamMTSSource;
+import com.arthenica.mobileffmpeg.Config;
+import com.arthenica.mobileffmpeg.FFmpeg;
+import com.arthenica.mobileffmpeg.Level;
+import com.example.libtest.mpegts.sources.InputStreamMTSSource;
 
 import java.io.File;
 import java.io.FileDescriptor;
-import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.channels.Channels;
+import java.nio.channels.WritableByteChannel;
+import java.util.Objects;
+import java.util.concurrent.Semaphore;
 
 import static android.Manifest.permission.READ_EXTERNAL_STORAGE;
 import static android.Manifest.permission.RECORD_AUDIO;
 import static android.Manifest.permission.WRITE_EXTERNAL_STORAGE;
 import static android.Manifest.permission.CAMERA;
+import static com.arthenica.mobileffmpeg.Config.RETURN_CODE_CANCEL;
+import static com.arthenica.mobileffmpeg.Config.RETURN_CODE_SUCCESS;
 
 public class MainActivity extends AppCompatActivity implements SurfaceHolder.Callback {
     // log tag
@@ -47,8 +54,6 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
     private static SurfaceView mSurfaceView;
 
     // Rtsp session
-    private Session mSession;
-    private static RtspClient mClient;
     private boolean mInitSuccesful;
     private MediaRecorder mMediaRecorder;
     private Camera mCamera;
@@ -57,16 +62,34 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
     ParcelFileDescriptor mParcelRead = null;
     ParcelFileDescriptor mParcelWrite = null;
     private FileDescriptor fd;
-    InputStream is = null;
+    MediaCodecInputStream is = null;
     File mfile = null;
+    private String mPipePath;
+    private File mOutFile;
+    private String mParcelReadFD;
+    private MediaCodec mMediaCodec;
+    private InputStreamMTSSource.InputStreamMTSSourceBuilder mPacketizer;
+    private String mParcelWriteFD;
+    private OutputStream outStream;
+    private boolean mUnlocked;
+    private boolean mUpdated;
+    private boolean mPreviewStarted;
+    private boolean mSurfaceReady;
+    private Thread mCameraThread;
+    private Looper mCameraLooper;
+    private boolean mCameraOpenedManually;
+    private boolean mStreaming;
+    EncoderDebugger debugger;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        // getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+        EncoderDebugger.asyncDebug(getApplicationContext(), 1920, 1080);
 
         setContentView(R.layout.activity_main);
 
@@ -76,106 +99,92 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
 
         verifyStoragePermissions(this);
 
-//        assert file != null;
-//        file.delete();
-
         mToggleButton = (ToggleButton) findViewById(R.id.toggleRecordingButton);
-        mToggleButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            // toggle video recording
-            public void onClick(View v) {
-                if (((ToggleButton) v).isChecked()) {
-                    mMediaRecorder.start();
+        // toggle video recording
+        mToggleButton.setOnClickListener((v) -> {
+            if (((ToggleButton) v).isChecked()) {
+                Thread streamTh2 = new Thread(() -> {
                     try {
-                        Thread.sleep(3000);
-                    } catch (InterruptedException e) {
+//                        Thread.sleep(6000);
+                        encodeWithMediaCodec();
+                    } catch (IOException e) {
                         e.printStackTrace();
                     }
-//                    startStream();
-                } else {
-                    mMediaRecorder.stop();
-                    mMediaRecorder.reset();
+                });
+                streamTh2.start();
+
+            } else {
+                mMediaCodec.stop();
+                mMediaCodec.reset();
 //                    startCamera();
-                }
+//                    startStream();
             }
         });
+
+//        startStream();
     }
 
     public void startCamera() throws IOException {
 
         mCamera = Camera.open(0);
         mCamera.setDisplayOrientation(0);
-        mCamera.unlock();
-//        try {
-//            mCamera.setPreviewDisplay(mSurfaceView.getHolder());
-//        } catch (IOException e) {
-//            e.printStackTrace();
-//        }
-//        mCamera.startPreview();
-
-        mMediaRecorder = new MediaRecorder();
-        mMediaRecorder.reset();
-        mMediaRecorder.setCamera(mCamera);
-        mMediaRecorder.setVideoSource(MediaRecorder.VideoSource.CAMERA);
-        mMediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_2_TS);
-        mMediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
-        mMediaRecorder.setPreviewDisplay(mSurfaceView.getHolder().getSurface());
-        mMediaRecorder.setVideoSize(1920, 1080);
-        mMediaRecorder.setVideoFrameRate(30);
-        mMediaRecorder.setMaxDuration(-1);
-
-        // The bandwidth actually consumed is often above what was requested
-        mMediaRecorder.setVideoEncodingBitRate((int)(3000000*0.8));
-
-        // We write the output of the camera in a local socket instead of a file !
-        // This one little trick makes streaming feasible quiet simply: data from the camera
-        // can then be manipulated at the other end of the socket
-        mParcelFileDescriptors = ParcelFileDescriptor.createPipe();
-        mParcelRead = new ParcelFileDescriptor(mParcelFileDescriptors[0]);
-        mParcelWrite = new ParcelFileDescriptor(mParcelFileDescriptors[1]);
-
-        fd = null;
-        fd = mParcelWrite.getFileDescriptor();
-
-        initDirs();
-
-//        InputStream is2 = new FileInputStream(getApplicationContext().getExternalFilesDir(Environment.DIRECTORY_MOVIES) + "/test_movie.ts");
-
-        mMediaRecorder.setOutputFile(fd);
-//        mMediaRecorder.setOutputFile(getApplicationContext().getExternalFilesDir(Environment.DIRECTORY_MOVIES) + "/test_movie.ts");
-//        mMediaRecorder.setOutputFile(is2);
-
-        mMediaRecorder.prepare();
-
-        is = new ParcelFileDescriptor.AutoCloseInputStream(mParcelRead);
-
-        Thread th = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                byte[] buffer = new byte[256];
-                while(true) {
-                    try {
-                        Log.i(TAG, String.valueOf(is.read(buffer, 0, 255)));
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
-            }
-        });
-        th.start();
+//        mCamera.unlock();
 
         mInitSuccesful = true;
 
-//        File file = initFile();
-//
-//        mMediaRecorder.setOutputFile(getApplicationContext().getExternalFilesDir(Environment.DIRECTORY_MOVIES) + "/test_movie.ts");
-//        Log.d(TAG, String.valueOf(getApplicationContext().getExternalFilesDir(Environment.DIRECTORY_MOVIES) + "/test_movie.ts"));
-//        try {
-//            mMediaRecorder.prepare();
-//        } catch (IOException e) {
-//            e.printStackTrace();
-//        }
+    }
 
+    private void encodeWithMediaCodec() throws IOException {
+
+    //        updateCamera();
+        debugger = EncoderDebugger.debug(getApplicationContext(), 1920, 1080);
+
+        Log.d(TAG,"Video encoded using the MediaCodec API with a surface");
+        Log.d(TAG, debugger.getEncoderName());
+
+        final MediaCodecInfo codecInfo;
+
+        mMediaCodec = MediaCodec.createByCodecName(debugger.getEncoderName());
+        MediaFormat mediaFormat = MediaFormat.createVideoFormat("video/avc", 1920, 1080);
+        mediaFormat.setInteger(MediaFormat.KEY_BIT_RATE, 4000000);
+        mediaFormat.setInteger(MediaFormat.KEY_FRAME_RATE, 24);
+        mediaFormat.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
+        mediaFormat.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1);
+//        mediaFormat.setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.H263Level10);
+//        mediaFormat.setInteger(MediaFormat.KEY_LATENCY, 1);
+//        mediaFormat.setInteger(MediaFormat.KEY_LOW_LATENCY, 1);
+        mMediaCodec.configure(mediaFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
+        Surface surface = mMediaCodec.createInputSurface();
+        ((SurfaceView)mSurfaceView).addMediaCodecSurface(surface);
+        mMediaCodec.start();
+
+        is = (new MediaCodecInputStream(mMediaCodec));
+
+        Thread writeToFile = new Thread(() -> {
+            try {
+                int length;
+                byte[] bytes = new byte[1024];
+//                WritableByteChannel byteChannel = Channels.newChannel(outStream);
+                while (true) {
+                    if(is.available() != 0) {
+                        length = is.read(bytes);
+                        outStream.write(bytes, 0, length);
+//                        is.writeToChannel(byteChannel);
+                    } else {
+                        Log.i(TAG, "Not Available = " + is.available() );
+                        Thread.sleep(1000);
+                    }
+                }
+
+            } catch (IOException | InterruptedException ex) {
+                ex.printStackTrace();
+            }
+        });
+        writeToFile.start();
+    }
+
+    private String getFileDescriptorPath(int fd) {
+        return "/proc/self/fd/" + String.valueOf(fd);
     }
 
     private void initDirs() {
@@ -183,6 +192,7 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
         // File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES),
         // this
         File dir = new File(getApplicationContext().getExternalFilesDir(Environment.DIRECTORY_MOVIES).toString());
+//        File dir = new File("/data/user/0/com.example.libtest/cache/");
 
         if (!dir.exists() && !dir.mkdirs()) {
             Log.wtf(TAG,
@@ -194,36 +204,23 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
     }
 
     private void startStream() {
-        InputStreamMTSSource.InputStreamMTSSourceBuilder isStreamBuilder = InputStreamMTSSource.builder();
-        InputStreamMTSSource mtsSource = null;
-        try {
-            Log.d(TAG, "IS = " + is.toString());
-            mtsSource = isStreamBuilder.setInputStream(is).build();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+        // ffmpeg -nostdin -i rtmp://XXX.XXX.XXX.XXX/pool/channel1 -xerror -err_detect explode -copytb 0 -vsync 0 -c copy -mpegts_original_network_id 0x1122 -mpegts_transport_stream_id 0x3344 -mpegts_service_id 0x5569 -mpegts_pmt_start_pid 0x1500 -mpegts_start_pid 0x150 -metadata service_provider="My Company" -metadata service_name="Channel1" -muxrate 2000320 -bsf:v h264_mp4toannexb -f mpegts -y /ts/channel1.ts
+        // -f android_camera -i 0:0 -r 30 -pixel_format bgr0 -f rtsp -b:v 5M "rtsp://192.168.4.115:8554/live
 
-        // Set up packet sink. We will send packets directly in UDP
-        MTSSink transport = null;
-        try {
-            transport = UDPTransport.builder()
-                    .setAddress("192.168.4.112") // Can be a multicast address
-                    .setPort(8554)
-                    .setSoTimeout(5000)
-                    .setTtl(1)
-                    .build();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+        final String command = " -c:v h264 -r 30 -i " + mParcelReadFD + " -b:v 10M -r 30 -f rtsp \"rtsp://192.168.4.115:8554/live\"";
+//        final String command = "-f android_camera -i 0 -r 1 -input_queue_size 150 -video_size 1920x1080 -pixel_format bgr0 -f rtsp -b:v 5M \"rtsp://192.168.4.115:8554/live\"";
 
-        // Build streamer
-        Streamer streamer = Streamer.builder()
-                .setSource(mtsSource) // We will stream this source
-                .setSink(transport) // We will send packets to this sink
-                .build();
+        Config.setLogLevel(Level.AV_LOG_DEBUG);
 
-        // Start streaming
-        streamer.stream();
+        long executionId = FFmpeg.executeAsync(command, (executionId1, returnCode) -> {
+            if (returnCode == RETURN_CODE_SUCCESS) {
+                Log.i(Config.TAG, "Async command execution completed successfully.");
+            } else if (returnCode == RETURN_CODE_CANCEL) {
+                Log.i(Config.TAG, "Async command execution cancelled by user.");
+            } else {
+                Log.i(Config.TAG, String.format("Async command execution failed with rc=%d.", returnCode));
+            }
+        });
     }
 
     // Storage Permissions
@@ -261,13 +258,28 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
 
     @Override
     public void surfaceCreated(@NonNull SurfaceHolder surfaceHolder) {
+        mSurfaceReady = true;
         if(!mInitSuccesful) {
-            try {
-                startCamera();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
+            createCamera();
         }
+        try {
+            startFiles();
+            Thread streamTh = new Thread(this::startStream);
+            streamTh.start();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void startFiles() throws IOException {
+
+        mParcelFileDescriptors = ParcelFileDescriptor.createPipe();
+        mParcelRead = new ParcelFileDescriptor(mParcelFileDescriptors[0]);
+        mParcelWrite = new ParcelFileDescriptor(mParcelFileDescriptors[1]);
+        mParcelReadFD = getFileDescriptorPath(mParcelRead.getFd());
+        mParcelWriteFD = getFileDescriptorPath(mParcelWrite.getFd());
+
+        outStream = new ParcelFileDescriptor.AutoCloseOutputStream(mParcelWrite);
     }
 
     @Override
@@ -279,12 +291,123 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
     public void surfaceDestroyed(@NonNull SurfaceHolder surfaceHolder) {
         // Release MediaRecorder and especially the Camera as it's a shared
         // object that can be used by other applications
-        mMediaRecorder.reset();
-        mMediaRecorder.release();
+        mMediaCodec.reset();
+        mMediaCodec.release();
         mCamera.release();
 
         // once the objects have been released they can't be reused
         mMediaRecorder = null;
         mCamera = null;
     }
+
+    private void openCamera() throws RuntimeException {
+        final Semaphore lock = new Semaphore(0);
+        final RuntimeException[] exception = new RuntimeException[1];
+
+        mCameraThread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                Looper.prepare();
+                mCameraLooper = Looper.myLooper();
+                try {
+                    Log.i(TAG, "Open Camera");
+                    mCamera = Camera.open(1);
+                    mCamera.setDisplayOrientation(0);
+//                    mCamera.unlock();
+                } catch (RuntimeException e) {
+                    exception[0] = e;
+                } finally {
+                    lock.release();
+                    Looper.loop();
+                }
+            }
+        });
+        mCameraThread.start();
+        lock.acquireUninterruptibly();
+        if (exception[0] != null) throw new CameraInUseException(exception[0].getMessage());
+    }
+
+    protected synchronized void createCamera() throws RuntimeException {
+        if (mSurfaceView == null)
+            throw new InvalidSurfaceException("Invalid surface !");
+        if (mSurfaceView.getHolder() == null || !mSurfaceReady)
+            throw new InvalidSurfaceException("Invalid surface !");
+
+        if (mCamera == null) {
+            openCamera();
+            mUpdated = false;
+            mUnlocked = false;
+
+            try {
+
+                // If the phone has a flash, we turn it on/off according to mFlashEnabled
+                // setRecordingHint(true) is a very nice optimization if you plane to only use the Camera for recording
+//                Camera.Parameters parameters = mCamera.getParameters();
+//                parameters.setRecordingHint(true);
+//                mCamera.setParameters(parameters);
+//                int mOrientation = 0;
+//                mCamera.setDisplayOrientation(mOrientation);
+
+                try {
+                    mSurfaceView.startGLThread();
+                    mCamera.setPreviewTexture(mSurfaceView.getSurfaceTexture());
+                    mCamera.startPreview();
+                } catch (IOException e) {
+                    Log.e(TAG, Objects.requireNonNull(e.getMessage()));
+                    throw new InvalidSurfaceException("Invalid surface !");
+                }
+
+            } catch (RuntimeException e) {
+                destroyCamera();
+                throw e;
+            }
+
+        }
+    }
+
+    /** Stops the stream. */
+    public synchronized void stop() {
+
+    }
+
+    protected synchronized void destroyCamera() {
+        if (mCamera != null) {
+            lockCamera();
+            mCamera.stopPreview();
+            try {
+                mCamera.release();
+            } catch (Exception e) {
+                Log.e(TAG,e.getMessage()!=null?e.getMessage():"unknown error");
+            }
+            mCamera = null;
+            mCameraLooper.quit();
+            mUnlocked = false;
+            mPreviewStarted = false;
+        }
+    }
+
+    protected void lockCamera() {
+        if (mUnlocked) {
+            Log.d(TAG,"Locking camera");
+            try {
+                mCamera.reconnect();
+            } catch (Exception e) {
+                Log.e(TAG, Objects.requireNonNull(e.getMessage()));
+            }
+            mUnlocked = false;
+        }
+    }
+
+    protected void unlockCamera() {
+        if (!mUnlocked) {
+            Log.d(TAG,"Unlocking camera");
+            try {
+                mCamera.unlock();
+            } catch (Exception e) {
+                Log.e(TAG, Objects.requireNonNull(e.getMessage()));
+            }
+            mUnlocked = true;
+        }
+    }
+
 }
