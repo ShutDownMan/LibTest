@@ -10,6 +10,7 @@ import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.channels.Channels;
 import java.nio.channels.WritableByteChannel;
+import java.util.Objects;
 
 import android.annotation.SuppressLint;
 import android.media.MediaCodec.BufferInfo;
@@ -29,7 +30,6 @@ public class MediaCodecInputStream extends InputStream {
 
     private MediaCodec mMediaCodec = null;
     private BufferInfo mBufferInfo = new BufferInfo();
-    private ByteBuffer[] mBuffers = null;
     private ByteBuffer mBuffer = null;
     private int mIndex = MediaCodec.INFO_TRY_AGAIN_LATER;
     private boolean mClosed = false;
@@ -38,7 +38,6 @@ public class MediaCodecInputStream extends InputStream {
 
     public MediaCodecInputStream(MediaCodec mediaCodec) {
         mMediaCodec = mediaCodec;
-        mBuffers = null;
     }
 
     @Override
@@ -56,13 +55,13 @@ public class MediaCodecInputStream extends InputStream {
         int min = 0;
 
         try {
-            chechBufferNull();
-
             if (mClosed) throw new IOException("This InputStream was closed");
+
+            checkBufferNull();
 
             min = Math.min(length, mBufferInfo.size - mBuffer.position());
             mBuffer.get(buffer, offset, min);
-            if (mBuffer.position()>=mBufferInfo.size) {
+            if (mBuffer.position() >= mBufferInfo.size) {
                 mMediaCodec.releaseOutputBuffer(mIndex, false);
                 mBuffer = null;
             }
@@ -74,18 +73,19 @@ public class MediaCodecInputStream extends InputStream {
         return min;
     }
 
-    private void chechBufferNull() {
+    private void checkBufferNull() {
         if (mBuffer==null) {
             while (!Thread.interrupted() && !mClosed) {
                 mIndex = mMediaCodec.dequeueOutputBuffer(mBufferInfo, 500000);
-                if (mIndex>=0 ){
+                if (mIndex >= 0){
                     //Log.d(TAG,"Index: "+mIndex+" Time: "+mBufferInfo.presentationTimeUs+" size: "+mBufferInfo.size);
-                    mBuffer = mBuffers[mIndex];
-                    mBuffer.position(0);
+
+                    mBuffer = mMediaCodec.getOutputBuffer(mIndex);
+                    Objects.requireNonNull(mBuffer).position(0);
                     break;
                 } else if (mIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
                     mMediaFormat = mMediaCodec.getOutputFormat();
-                    Log.i(TAG,mMediaFormat.toString());
+                    Log.i(TAG, mMediaFormat.toString());
                 } else if (mIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
                     Log.v(TAG,"No buffer available...");
                 } else {
@@ -96,6 +96,7 @@ public class MediaCodecInputStream extends InputStream {
     }
 
     public int available() {
+        checkBufferNull();
         if (mBuffer != null)
             return mBufferInfo.size - mBuffer.position();
         else
@@ -108,8 +109,10 @@ public class MediaCodecInputStream extends InputStream {
 
     public void writeToChannel(WritableByteChannel channel) throws IOException {
         Log.v(TAG,"writeToChannel");
-//        checkBufferNull();
+
         if (mClosed) throw new IOException("This InputStream was closed");
+
+        checkBufferNull();
 
         channel.write(mBuffer);
         mMediaCodec.releaseOutputBuffer(mIndex, false);

@@ -124,6 +124,7 @@ public class SurfaceView extends android.view.SurfaceView implements Runnable, O
 	@Override
 	public void run() {
 		Log.i(TAG, "Surface run");
+
 		mViewSurfaceManager = new SurfaceManager(getHolder().getSurface());
 		mViewSurfaceManager.makeCurrent();
 		mTextureManager.createTexture().setOnFrameAvailableListener(this);
@@ -131,32 +132,32 @@ public class SurfaceView extends android.view.SurfaceView implements Runnable, O
 		mLock.release();
 
 		try {
-			SurfaceTexture surfaceTex = mTextureManager.getSurfaceTexture();
 			long ts = 0, oldts = 0;
 			while (mRunning) {
 				synchronized (mSyncObject) {
-					mSyncObject.wait(0);
+					mSyncObject.wait(50);
 					if (mFrameAvailable) {
 						mFrameAvailable = false;
 
 						mViewSurfaceManager.makeCurrent();
 						mTextureManager.updateFrame();
+
 						mTextureManager.drawFrame();
 						mViewSurfaceManager.swapBuffer();
 
 						if (mCodecSurfaceManager != null) {
 							mCodecSurfaceManager.makeCurrent();
-//							mTextureManager.updateFrame();
 							mTextureManager.drawFrame();
+
 							oldts = ts;
-							ts = surfaceTex.getTimestamp();
-//							Log.d(TAG,"FPS: "+(1000000000/(ts-oldts)));
+							ts = mTextureManager.getSurfaceTexture().getTimestamp();
+							//Log.d(TAG,"FPS: "+(1000000000/(ts-oldts)));
+
 							mCodecSurfaceManager.setPresentationTime(ts);
 							mCodecSurfaceManager.swapBuffer();
 						}
-
 					} else {
-//						Log.e(TAG,"No frame received !");
+						Log.e(TAG,"No frame received !");
 					}
 				}
 			}
